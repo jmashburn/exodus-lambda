@@ -301,7 +301,7 @@ Resources:
               - build-stage
       Targets:
         - Arn: !Sub arn:aws:codepipeline:${region}:${AWS::AccountId}:${CodePipeline}
-          RoleArn: !GetAtt CloudWatchEventRole.Arn
+          RoleArn: arn:aws:codepipeline:${region}:${AWS::AccountId}:${cloudwatcheventrole}
           Id: !Ref CodePipeline
 
   CodePipelineCloudTrail:
