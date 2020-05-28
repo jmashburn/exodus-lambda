@@ -49,6 +49,23 @@ Parameters:
       - false
     Default: false
     Description: Determines whether to create CloudTrail resources
+  codebuildrole:
+    Type: String
+    Default: CodeBuildRole
+    Description: Code Build Role
+  cloudformationrole:
+    Type: String
+    Default: CloudFormationRole
+    Description: CloudFormation Role
+  codepipelinerole:
+    Type: String
+    Default: CodePipelineRole
+    Description: Codepipline Role
+  cloudwatcheventrole:
+    Type: String
+    Default: CloudWatchEventRole
+    Description: CloudWatch Event Role
+
 
 Conditions:
   IsDev:
@@ -118,7 +135,7 @@ Resources:
       ArtifactStore:
         Type: S3
         Location: !Sub ${project}-pipeline-artifacts
-      RoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/${project}-codepipe-${env}
+      RoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/${codepipelinerole}
       Stages:
         # Create Github source for dev, stage pipelines
         - !If
@@ -226,7 +243,7 @@ Resources:
                 Capabilities: CAPABILITY_AUTO_EXPAND,CAPABILITY_NAMED_IAM
                 ParameterOverrides:
                   !Sub '{"env": "${env}", "oai": "${oai}", "project": "${project}"}'
-                RoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/${project}-cloudform-${env}
+                RoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/${codebuildrole}
                 StackName: !Sub ${project}-lambda-${env}
                 TemplatePath: BuildArtifact::exodus-lambda-pkg.yaml
               InputArtifacts:
@@ -261,9 +278,6 @@ Resources:
                   - Name: BuildArtifact
                 RunOrder: 2
           - !Ref AWS::NoValue
-    DependsOn:
-      - CodePipelineRole
-      - CloudFormationRole
 
   CodePipelineEventRule:
     Type: AWS::Events::Rule
@@ -289,7 +303,6 @@ Resources:
         - Arn: !Sub arn:aws:codepipeline:${region}:${AWS::AccountId}:${CodePipeline}
           RoleArn: !GetAtt CloudWatchEventRole.Arn
           Id: !Ref CodePipeline
-    DependsOn: CloudWatchEventRole
 
   CodePipelineCloudTrail:
     Type: AWS::CloudTrail::Trail
@@ -387,7 +400,7 @@ Resources:
     Condition: IsStage
     Properties:
       Name: !Sub ${project}-verify-source
-      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/${project}-codebuild-${env}
+      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/${codebuildrole}
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
@@ -408,7 +421,6 @@ Resources:
       Artifacts:
         Type: NO_ARTIFACTS
       TimeoutInMinutes: 10
-    DependsOn: CodeBuildRole
 
   CodeBuildProject:
     Type: AWS::CodeBuild::Project
@@ -416,7 +428,7 @@ Resources:
     Condition: IsDev
     Properties:
       Name: !Sub ${project}-codebuild
-      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/${project}-codebuild-${env}
+      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/${codebuildrole}
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
@@ -436,123 +448,6 @@ Resources:
       Artifacts:
         Type: CODEPIPELINE
       TimeoutInMinutes: 10
-    DependsOn: CodeBuildRole
-
-  # Create IAM roles for resources, used for all environments
-  CodeBuildRole:
-    Type: AWS::IAM::Role
-    Condition: NotProd
-    Properties:
-      RoleName: !Sub ${project}-codebuild-${env}
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Action:
-              - sts:AssumeRole
-            Principal:
-              Service:
-                - codebuild.amazonaws.com
-      Policies:
-        - PolicyName: !Sub ${project}-codebuild-policy-${env}
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:*
-                  - codebuild:*
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: "*"
-      Path: /
-
-  CloudFormationRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub ${project}-cloudform-${env}
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Action:
-              - sts:AssumeRole
-            Principal:
-              Service:
-                - cloudformation.amazonaws.com
-      Policies:
-        - PolicyName: !Sub ${project}-cloudform-policy-${env}
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - iam:*
-                  - lambda:*
-                  - s3:*
-                  - cloudfront:*
-                  - cloudwatch:*
-                  - cloudformation:*
-                Resource:
-                  - "*"
-      Path: /
-
-  CodePipelineRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub ${project}-codepipe-${env}
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Action:
-              - sts:AssumeRole
-            Principal:
-              Service:
-                - codepipeline.amazonaws.com
-      Policies:
-        - PolicyName: !Sub ${project}-codepipe-policy-${env}
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - iam:PassRole
-                  - sns:*
-                  - lambda:ListFunctions
-                  - lambda:InvokeFunction
-                  - s3:*
-                  - cloudwatch:*
-                  - cloudformation:*
-                  - codebuild:StartBuild
-                  - codebuild:BatchGetBuilds
-                Resource: "*"
-      Path: /
-
-  CloudWatchEventRole:
-    Type: AWS::IAM::Role
-    Condition: IsProd
-    Properties:
-      RoleName: !Sub ${project}-cloudwatch-${env}
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Action:
-              - sts:AssumeRole
-            Principal:
-              Service:
-                - events.amazonaws.com
-      Policies:
-        - PolicyName: !Sub ${project}-cloudwatch-policy-${env}
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action: codepipeline:StartPipelineExecution
-                Resource: !Sub arn:aws:codepipeline:${region}:${AWS::AccountId}:${CodePipeline}
-    DependsOn: CodePipeline
 
 Outputs:
   CodePipeline:
@@ -563,7 +458,7 @@ Outputs:
     Value: !Sub arn:aws:s3:::${project}-pipeline-artifacts
   CodeBuildProject:
     Description: exodus CodeBuild project ARN
-    Value: !Sub arn:aws:codebuild:${region}:${AWS::AccountId}:project/${project}-codebuild-${env}
+    Value: !Sub arn:aws:codebuild:${region}:${AWS::AccountId}:project/${codebuildrole}
   SNSTopic:
     Description: exodus SNS topic ARN
     Value: !Ref SNSTopic
